@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Programcının kütüphanesi</title>
+    <link rel="stylesheet" href="../static/css/style.css">
+</head>
+<body>
+    <header class="header">
+        <img src="../static/img/logo.svg" alt="logo" width="30" height="30">
+        <ul class="main-list">
+            <li class="list__item">
+              <a href="">
+                <img src="../static/img/login.svg" alt="login" width="20" height="20">
+              </a>
+        </ul>
+      </header>
+      <main>
+        {% block content %}
+        <form action="{{ url_for('form_create') }}" method="post" class="creat-form">
+            <div class="form__card">
+                <img class="card__img" src="../static/img/post_icon.png" width="250" height="250" alt="post_icon">
+                <div class="form__inputs">
+                    <label for="title">
+                        <input class="form__input" type="text" name="title" id="title" placeholder="Kayıt başlığını yazın" required>
+                    </label>
+                    <label for="subtitle">
+                        <input class="form__input" type="text" name="subtitle" id="subtitle" placeholder="Alt başlığını yazın" required>
+                    </label>
+                </div>
+                <label for="text">
+                    <textarea class="form__text" name="text" id="text" cols="30" rows="10" required placeholder="Biraz metin yazın..."></textarea>
+                </label>
+                
+                <!-- Ses Kayıt Bölümü -->
+                <div class="audio-section">
+                    <button type="button" id="recordButton" class="audio-button">
+                        <span id="recordIcon">🎤</span>
+                        <span id="recordText">Ses Kaydet</span>
+                    </button>
+                    <div id="recordingStatus" class="recording-status" style="display: none;">
+                        <span class="recording-dot"></span>
+                        Kayıt yapılıyor...
+                    </div>
+                    <div id="audioResult" class="audio-result" style="display: none;">
+                        <p>Ses tanıma tamamlandı!</p>
+                        <button type="button" id="useAudioText" class="use-audio-button">Metni Kullan</button>
+                    </div>
+                </div>
+                
+                <button class="form__button">Oluştur</button>
+            </div>
+        </form>
+        {% endblock %}
+      </main>
+      
+      <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        
+        const recordButton = document.getElementById('recordButton');
+        const recordIcon = document.getElementById('recordIcon');
+        const recordText = document.getElementById('recordText');
+        const recordingStatus = document.getElementById('recordingStatus');
+        const audioResult = document.getElementById('audioResult');
+        const useAudioButton = document.getElementById('useAudioText');
+        const textArea = document.getElementById('text');
+        
+        // Mikrofon erişimi iste
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+                
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    sendAudioToServer(audioBlob);
+                    audioChunks = [];
+                };
+            })
+            .catch(err => {
+                console.error('Mikrofon erişimi reddedildi:', err);
+                recordButton.disabled = true;
+                recordText.textContent = 'Mikrofon Erişimi Gerekli';
+            });
+        
+        recordButton.addEventListener('click', () => {
+            if (!isRecording) {
+                startRecording();
+            } else {
+                stopRecording();
+            }
+        });
+        
+        useAudioButton.addEventListener('click', () => {
+            const recognizedText = useAudioButton.dataset.text;
+            if (recognizedText) {
+                textArea.value = recognizedText;
+                audioResult.style.display = 'none';
+            }
+        });
+        
+        function startRecording() {
+            isRecording = true;
+            recordIcon.textContent = '⏹️';
+            recordText.textContent = 'Kaydı Durdur';
+            recordingStatus.style.display = 'block';
+            audioResult.style.display = 'none';
+            
+            mediaRecorder.start();
+        }
+        
+        function stopRecording() {
+            isRecording = false;
+            recordIcon.textContent = '🎤';
+            recordText.textContent = 'Ses Kaydet';
+            recordingStatus.style.display = 'none';
+            
+            mediaRecorder.stop();
+        }
+        
+        function sendAudioToServer(audioBlob) {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.webm');
+            
+            fetch('/speech_to_text', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    useAudioButton.dataset.text = data.text;
+                    audioResult.style.display = 'block';
+                } else {
+                    alert('Ses tanıma hatası: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Hata:', error);
+                alert('Ses tanıma sırasında hata oluştu');
+            });
+        }
+      </script>
+</body>
+</html>

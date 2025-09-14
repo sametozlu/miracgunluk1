@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ses Tanıma Oyunu - Programcının Kütüphanesi</title>
+    <link rel="stylesheet" href="../static/css/style.css">
+</head>
+<body>
+    <header class="header">
+        <img src="../static/img/logo.svg" alt="logo" width="30" height="30">
+        <ul class="main-list">
+            <li class="list__item">
+                <a href="/">
+                    <img src="../static/img/login.svg" alt="ana sayfa" width="20" height="20">
+                </a>
+            </li>
+        </ul>
+    </header>
+    
+    <main>
+        <div class="game-container">
+            <h1 class="game-title">🎤 Ses Tanıma Oyunu</h1>
+            
+            <!-- Seviye Seçimi -->
+            <div id="levelSelection" class="level-selection">
+                <h2>Zorluk Seviyesi Seçin</h2>
+                <div class="level-buttons">
+                    <button class="level-btn" data-level="kolay">🟢 Kolay</button>
+                    <button class="level-btn" data-level="orta">🟡 Orta</button>
+                    <button class="level-btn" data-level="zor">🔴 Zor</button>
+                </div>
+            </div>
+            
+            <!-- Oyun Alanı -->
+            <div id="gameArea" class="game-area" style="display: none;">
+                <div class="game-info">
+                    <div class="info-item">
+                        <span class="info-label">Seviye:</span>
+                        <span id="currentLevel" class="info-value"></span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Puan:</span>
+                        <span id="score" class="info-value">0</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Deneme:</span>
+                        <span id="attempts" class="info-value">0/3</span>
+                    </div>
+                </div>
+                
+                <div class="word-display">
+                    <h2 id="targetWord" class="target-word"></h2>
+                    <p class="word-instruction">Bu kelimeyi İngilizce olarak söyleyin!</p>
+                </div>
+                
+                <div class="timer-display">
+                    <div id="timer" class="timer">⏱️ 10</div>
+                </div>
+                
+                <div class="audio-controls">
+                    <button id="recordButton" class="audio-button">
+                        <span id="recordIcon">🎤</span>
+                        <span id="recordText">Ses Kaydet</span>
+                    </button>
+                    
+                    <div id="recordingStatus" class="recording-status" style="display: none;">
+                        <span class="recording-dot"></span>
+                        Kayıt yapılıyor...
+                    </div>
+                </div>
+                
+                <div id="resultArea" class="result-area" style="display: none;">
+                    <div id="resultMessage" class="result-message"></div>
+                    <button id="nextWordBtn" class="next-word-btn" style="display: none;">Sonraki Kelime</button>
+                </div>
+                
+                <div class="game-controls">
+                    <button id="newGameBtn" class="control-btn">Yeni Oyun</button>
+                    <button id="backToMenuBtn" class="control-btn">Ana Menü</button>
+                </div>
+            </div>
+            
+            <!-- Oyun Sonu -->
+            <div id="gameOver" class="game-over" style="display: none;">
+                <h2>🎉 Oyun Bitti!</h2>
+                <div class="final-score">
+                    <p>Toplam Puan: <span id="finalScore">0</span></p>
+                    <p>Seviye: <span id="finalLevel"></span></p>
+                </div>
+                <div class="game-over-controls">
+                    <button id="playAgainBtn" class="control-btn">Tekrar Oyna</button>
+                    <button id="backToMenuBtn2" class="control-btn">Ana Menü</button>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        let gameState = {
+            level: '',
+            currentWord: '',
+            score: 0,
+            attempts: 0,
+            maxAttempts: 3,
+            timeLimit: 10,
+            timer: null,
+            timeLeft: 10
+        };
+        
+        // DOM Elements
+        const levelSelection = document.getElementById('levelSelection');
+        const gameArea = document.getElementById('gameArea');
+        const gameOver = document.getElementById('gameOver');
+        const recordButton = document.getElementById('recordButton');
+        const recordIcon = document.getElementById('recordIcon');
+        const recordText = document.getElementById('recordText');
+        const recordingStatus = document.getElementById('recordingStatus');
+        const resultArea = document.getElementById('resultArea');
+        const resultMessage = document.getElementById('resultMessage');
+        const nextWordBtn = document.getElementById('nextWordBtn');
+        const timer = document.getElementById('timer');
+        
+        // Mikrofon erişimi
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+                
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    checkWord(audioBlob);
+                    audioChunks = [];
+                };
+            })
+            .catch(err => {
+                console.error('Mikrofon erişimi reddedildi:', err);
+                recordButton.disabled = true;
+                recordText.textContent = 'Mikrofon Erişimi Gerekli';
+            });
+        
+        // Event Listeners
+        document.querySelectorAll('.level-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                startGame(e.target.dataset.level);
+            });
+        });
+        
+        recordButton.addEventListener('click', () => {
+            if (!isRecording) {
+                startRecording();
+            } else {
+                stopRecording();
+            }
+        });
+        
+        nextWordBtn.addEventListener('click', () => {
+            getNewWord();
+        });
+        
+        document.getElementById('newGameBtn').addEventListener('click', () => {
+            resetGame();
+        });
+        
+        document.getElementById('backToMenuBtn').addEventListener('click', () => {
+            showLevelSelection();
+        });
+        
+        document.getElementById('playAgainBtn').addEventListener('click', () => {
+            resetGame();
+        });
+        
+        document.getElementById('backToMenuBtn2').addEventListener('click', () => {
+            showLevelSelection();
+        });
+        
+        function startGame(level) {
+            gameState.level = level;
+            gameState.score = 0;
+            gameState.attempts = 0;
+            
+            document.getElementById('currentLevel').textContent = level.charAt(0).toUpperCase() + level.slice(1);
+            document.getElementById('score').textContent = '0';
+            document.getElementById('attempts').textContent = '0/3';
+            
+            levelSelection.style.display = 'none';
+            gameArea.style.display = 'block';
+            
+            getNewWord();
+        }
+        
+        function getNewWord() {
+            fetch('/start_game', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ level: gameState.level })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    gameState.currentWord = data.word;
+                    gameState.attempts = 0;
+                    gameState.timeLeft = data.time_limit;
+                    
+                    document.getElementById('targetWord').textContent = data.word;
+                    document.getElementById('attempts').textContent = '0/3';
+                    resultArea.style.display = 'none';
+                    
+                    startTimer();
+                } else {
+                    alert('Oyun başlatılamadı: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Hata:', error);
+                alert('Oyun başlatılamadı');
+            });
+        }
+        
+        function startTimer() {
+            if (gameState.timer) {
+                clearInterval(gameState.timer);
+            }
+            
+            gameState.timeLeft = gameState.timeLimit;
+            updateTimer();
+            
+            gameState.timer = setInterval(() => {
+                gameState.timeLeft--;
+                updateTimer();
+                
+                if (gameState.timeLeft <= 0) {
+                    clearInterval(gameState.timer);
+                    timeUp();
+                }
+            }, 1000);
+        }
+        
+        function updateTimer() {
+            timer.textContent = `⏱️ ${gameState.timeLeft}`;
+            if (gameState.timeLeft <= 3) {
+                timer.style.color = '#ff6b6b';
+            } else {
+                timer.style.color = '#F8FAFC';
+            }
+        }
+        
+        function timeUp() {
+            showResult('⏰ Süre doldu!', false);
+        }
+        
+        function startRecording() {
+            if (gameState.attempts >= gameState.maxAttempts) {
+                alert('Maksimum deneme sayısına ulaştınız!');
+                return;
+            }
+            
+            isRecording = true;
+            recordIcon.textContent = '⏹️';
+            recordText.textContent = 'Kaydı Durdur';
+            recordingStatus.style.display = 'block';
+            resultArea.style.display = 'none';
+            
+            mediaRecorder.start();
+        }
+        
+        function stopRecording() {
+            isRecording = false;
+            recordIcon.textContent = '🎤';
+            recordText.textContent = 'Ses Kaydet';
+            recordingStatus.style.display = 'none';
+            
+            mediaRecorder.stop();
+        }
+        
+        function checkWord(audioBlob) {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.webm');
+            formData.append('target_word', gameState.currentWord);
+            
+            fetch('/check_word', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                gameState.attempts++;
+                document.getElementById('attempts').textContent = `${gameState.attempts}/${gameState.maxAttempts}`;
+                
+                if (data.success) {
+                    if (data.correct) {
+                        gameState.score += 10;
+                        document.getElementById('score').textContent = gameState.score;
+                        showResult(`✅ Doğru! "${data.recognized}"`, true);
+                        clearInterval(gameState.timer);
+                    } else {
+                        showResult(`❌ Yanlış! Tanınan: "${data.recognized}"`, false);
+                    }
+                } else {
+                    showResult(`❌ Hata: ${data.error}`, false);
+                }
+                
+                if (gameState.attempts >= gameState.maxAttempts && !data.correct) {
+                    setTimeout(() => {
+                        getNewWord();
+                    }, 2000);
+                }
+            })
+            .catch(error => {
+                console.error('Hata:', error);
+                showResult('❌ Ses tanıma sırasında hata oluştu', false);
+            });
+        }
+        
+        function showResult(message, isCorrect) {
+            resultMessage.textContent = message;
+            resultMessage.className = `result-message ${isCorrect ? 'correct' : 'incorrect'}`;
+            resultArea.style.display = 'block';
+            
+            if (isCorrect) {
+                nextWordBtn.style.display = 'block';
+            } else if (gameState.attempts >= gameState.maxAttempts) {
+                setTimeout(() => {
+                    getNewWord();
+                }, 2000);
+            }
+        }
+        
+        function resetGame() {
+            gameState.score = 0;
+            gameState.attempts = 0;
+            if (gameState.timer) {
+                clearInterval(gameState.timer);
+            }
+            
+            showLevelSelection();
+        }
+        
+        function showLevelSelection() {
+            levelSelection.style.display = 'block';
+            gameArea.style.display = 'none';
+            gameOver.style.display = 'none';
+        }
+        
+        function endGame() {
+            if (gameState.timer) {
+                clearInterval(gameState.timer);
+            }
+            
+            document.getElementById('finalScore').textContent = gameState.score;
+            document.getElementById('finalLevel').textContent = gameState.level.charAt(0).toUpperCase() + gameState.level.slice(1);
+            
+            gameArea.style.display = 'none';
+            gameOver.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
